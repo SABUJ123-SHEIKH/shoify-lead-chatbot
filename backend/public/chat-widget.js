@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE = window.KG_CHAT_API || 'http://localhost:3000';
+const API_BASE = 'https://shoify-lead-chatbot-1.onrender.com';
   let leadId = localStorage.getItem('kg_lead_id') || '';
 
   const css = `
