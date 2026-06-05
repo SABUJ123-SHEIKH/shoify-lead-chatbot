@@ -1,6 +1,6 @@
 
 require('dotenv').config();
-new sqlite3.Database(process.env.DB_PATH || "/tmp/leads.sqlite");
+const sqlite3 = require("sqlite3").verbose();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
