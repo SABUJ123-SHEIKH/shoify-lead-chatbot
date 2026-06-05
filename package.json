@@ -11,14 +11,14 @@
     "express": "latest",
     "helmet": "latest",
     "node-fetch": "2.7.0",
-    "sqlite3": "5.1.7"
     "pg": "latest",
+    "sqlite3": "5.1.7",
     "uuid": "latest"
   },
   "devDependencies": {
     "nodemon": "latest"
   },
-"engines": {
-  "node": "20.x"
-}
+  "engines": {
+    "node": "20.x"
+  }
 }
