@@ -1,7 +1,6 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const sqlite3 = require("sqlite3").verbose();
 
-const dbPath = path.join(__dirname, '../../database/leads.sqlite');
+const dbPath = process.env.DB_PATH || "/tmp/leads.sqlite";
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
@@ -15,8 +14,7 @@ db.serialize(() => {
     budget TEXT,
     message TEXT,
     source_page TEXT,
-    status TEXT DEFAULT 'new',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS chat_messages (
@@ -24,7 +22,7 @@ db.serialize(() => {
     lead_id TEXT,
     sender TEXT,
     message TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 });
 
