@@ -12,7 +12,6 @@
     "helmet": "latest",
     "node-fetch": "2.7.0",
     "pg": "latest",
-    "sqlite3": "latest",
     "uuid": "latest"
   },
   "devDependencies": {
