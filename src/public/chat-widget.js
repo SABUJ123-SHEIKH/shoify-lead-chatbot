@@ -29,6 +29,7 @@
       border-radius:24px;overflow:hidden;display:none;flex-direction:column;
       box-shadow:0 26px 80px rgba(15,23,42,.24);
       font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      min-height:0;
     }
     .kg-chat-shell *{box-sizing:border-box}
     .kg-chat-top{
@@ -80,7 +81,8 @@
     }
     .kg-chip:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(15,23,42,.08);border-color:#b9c4d3}
     .kg-chat-body{
-      flex:1 1 auto;min-height:180px;overflow:auto;
+      flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch;
       padding:16px;background:
       radial-gradient(circle at top left,rgba(34,197,94,.06),transparent 28%),
       linear-gradient(180deg,#f8fafc 0%,#f7f8fb 100%);
@@ -102,7 +104,7 @@
       color:#fff;margin-left:auto;box-shadow:0 12px 28px rgba(15,23,42,.16)
     }
     .kg-chat-footer{
-      background:#fff;border-top:1px solid #eef2f7;padding:14px
+      background:#fff;border-top:1px solid #eef2f7;padding:14px;flex:0 0 auto
     }
     .kg-compose{
       display:flex;gap:10px;align-items:flex-end;margin-bottom:10px
@@ -279,8 +281,8 @@
     }
 
     function toggle(open) {
-      const next = typeof open === 'boolean' ? open : shell.style.display !== 'block';
-      shell.style.display = next ? 'block' : 'none';
+      const next = typeof open === 'boolean' ? open : shell.style.display !== 'flex';
+      shell.style.display = next ? 'flex' : 'none';
       if (next) {
         setTimeout(() => input.focus(), 50);
       }

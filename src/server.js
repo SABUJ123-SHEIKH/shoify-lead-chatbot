@@ -35,6 +35,28 @@ function dedupeByKey(items, keyFn){
     return true;
   });
 }
+function parseMoney(value){
+  const parsed = Number(String(value ?? '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function getOfferMeta(product){
+  const raw = product && product.raw ? product.raw : {};
+  const rawVariant = Array.isArray(raw.variants) ? raw.variants[0] : (raw.variants || {});
+  const compareAt = parseMoney(rawVariant.compare_at_price ?? product.compare_at_price ?? null);
+  const price = parseMoney(rawVariant.price ?? product.price ?? null);
+  if (compareAt && price && compareAt > price) {
+    return {
+      isOffer: true,
+      label: `${Math.round(((compareAt - price) / compareAt) * 100)}% off`,
+      compareAt,
+      price,
+    };
+  }
+  return { isOffer: false, label: '', compareAt, price };
+}
+function enrichProduct(product){
+  return { ...product, offer: getOfferMeta(product) };
+}
 function detectIntent(message){
   const text = String(message || '').toLowerCase();
   if (/\b(all\s+products?|show\s+all|catalog|browse\s+all)\b/.test(text)) return { type:'catalog' };
@@ -47,7 +69,13 @@ function detectIntent(message){
 }
 function formatProductList(products, siteName, heading){
   if(!products.length) return null;
-  const lines = products.map((p, i) => `${i + 1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency || 'DKK'}` : ''}\n${p.url}`);
+  const lines = products.map((p, i) => {
+    const priceLine = p.price ? ` – ${p.price} ${p.currency || 'DKK'}` : '';
+    const offerLine = p.offer && p.offer.isOffer
+      ? `\n   Offer: ${p.offer.label}${p.offer.compareAt ? ` (was ${p.offer.compareAt} ${p.currency || 'DKK'})` : ''}`
+      : '';
+    return `${i + 1}. ${p.title}${priceLine}${offerLine}\n${p.url}`;
+  });
   return `${heading || `Here are some options on ${siteName}:`}\n\n${lines.join('\n\n')}`;
 }
 function formatFaqReply(faqs, fallback){
@@ -65,7 +93,7 @@ function buildCatalogProducts(catalog, category){
           : /\bchair|seat|stool\b/.test(hay);
       })
     : catalog;
-  return filtered.slice(0, 8);
+  return filtered.slice(0, 8).map(enrichProduct);
 }
 
 async function getSite(siteId){
@@ -96,14 +124,14 @@ async function searchFaqs(siteId,message){
 }
 async function listCatalog(siteId, limit = 18){
   const r = await pool.query(
-    `SELECT title, price, currency, url, image, product_type, vendor, tags
+    `SELECT title, price, currency, url, image, product_type, vendor, tags, raw
      FROM products
      WHERE site_id=$1
      ORDER BY updated_at DESC
      LIMIT $2`,
     [siteId, limit]
   );
-  return r.rows;
+  return r.rows.map(enrichProduct);
 }
 async function recentConversation(siteId, leadId, limit = 8){
   if(!leadId) return [];
@@ -197,8 +225,12 @@ function simpleAnswer(site, products, pages, message){
   const siteName = site && site.name ? site.name : 'this store';
   const siteUrl = site && site.url ? site.url : '';
   if(products.length){
-    const lines=products.map((p,i)=>`${i+1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency||'DKK'}`:''}\n${p.url}`);
-    return `I found these matching options on ${siteName}:\n\n${lines.join('\n\n')}\n\nI can also help with sizing, availability, shipping, or returns. If you want, send your phone number and budget and I’ll help you next.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
+    const lines=products.map((p,i)=>{
+      const offerLine = p.offer && p.offer.isOffer ? `\n   Offer: ${p.offer.label}${p.offer.compareAt ? ` (was ${p.offer.compareAt} ${p.currency||'DKK'})` : ''}` : '';
+      return `${i+1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency||'DKK'}`:''}${offerLine}\n${p.url}`;
+    });
+    const offerCount = products.filter(p => p.offer && p.offer.isOffer).length;
+    return `I found these matching options on ${siteName}:\n\n${lines.join('\n\n')}${offerCount ? `\n\nI also spotted ${offerCount} item${offerCount > 1 ? 's' : ''} on offer.` : ''}\n\nI can also help with sizing, availability, shipping, or returns. If you want, send your phone number and budget and I’ll help you next.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
   }
   if(pages.length){
     return `I found these relevant pages on ${siteName}:\n\n${pages.map((p,i)=>`${i+1}. ${p.title}\n${p.url}`).join('\n\n')}\n\nIf you want, I can also help you compare options or connect you to support.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
@@ -276,12 +308,14 @@ async function aiAnswer(site, products, pages, message, leadId){
   if (intent.type === 'catalog') {
     const list = buildCatalogProducts(catalog);
     const reply = formatProductList(list, site.name, `Here are some products from ${site.name}:`) || simpleAnswer(site, [], pages, message);
-    return `${reply}\n\nIf you want, I can narrow this down by desk, chair, budget, or size.`;
+    const offerCount = list.filter(p => p.offer && p.offer.isOffer).length;
+    return `${reply}${offerCount ? `\n\nI also found ${offerCount} offer${offerCount > 1 ? 's' : ''} in the current catalog.` : ''}\n\nIf you want, I can narrow this down by desk, chair, budget, or size.`;
   }
   if (intent.type === 'category') {
     const list = buildCatalogProducts(catalog, intent.category);
     const reply = formatProductList(list, site.name, `Here are the best ${intent.category === 'desk' ? 'desk' : 'chair'} options I found on ${site.name}:`) || simpleAnswer(site, [], pages, message);
-    return `${reply}\n\nIf you want, I can narrow this down by budget, size, or color.`;
+    const offerCount = list.filter(p => p.offer && p.offer.isOffer).length;
+    return `${reply}${offerCount ? `\n\nSome of these are currently on offer.` : ''}\n\nIf you want, I can narrow this down by budget, size, or color.`;
   }
   if (intent.type === 'faq') {
     const faqs = await searchFaqs(site.id, intent.topic);
