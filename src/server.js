@@ -60,6 +60,7 @@ function enrichProduct(product){
 function detectIntent(message){
   const text = String(message || '').toLowerCase();
   if (/\b(all\s+products?|show\s+all|catalog|browse\s+all)\b/.test(text)) return { type:'catalog' };
+  if (/\b(offer|offers|sale|sales|discount|discounts|deal|deals|on\s+offer|on\s+sale)\b/.test(text)) return { type:'offer' };
   if (/\b(shipping|delivery|deliver|ship)\b/.test(text)) return { type:'faq', topic:'shipping' };
   if (/\b(return|refund|warranty|exchange)\b/.test(text)) return { type:'faq', topic:'returns' };
   if (/\b(show|browse|find|need|looking for)\b/.test(text) && /\bdesk(s)?\b/.test(text)) return { type:'category', category:'desk' };
@@ -94,6 +95,9 @@ function buildCatalogProducts(catalog, category){
       })
     : catalog;
   return filtered.slice(0, 8).map(enrichProduct);
+}
+function buildOfferProducts(catalog){
+  return catalog.filter(p => p.offer && p.offer.isOffer).slice(0, 8).map(enrichProduct);
 }
 
 async function getSite(siteId){
@@ -310,6 +314,14 @@ async function aiAnswer(site, products, pages, message, leadId){
     const reply = formatProductList(list, site.name, `Here are some products from ${site.name}:`) || simpleAnswer(site, [], pages, message);
     const offerCount = list.filter(p => p.offer && p.offer.isOffer).length;
     return `${reply}${offerCount ? `\n\nI also found ${offerCount} offer${offerCount > 1 ? 's' : ''} in the current catalog.` : ''}\n\nIf you want, I can narrow this down by desk, chair, budget, or size.`;
+  }
+  if (intent.type === 'offer') {
+    const offers = buildOfferProducts(catalog);
+    if (!offers.length) {
+      return `I checked the current products on ${site.name}, and I do not see any active offers right now.\n\nIf you want, I can still show the best products by category, price, or budget.`;
+    }
+    const reply = formatProductList(offers, site.name, `These products on ${site.name} currently have offers:`) || simpleAnswer(site, [], pages, message);
+    return `${reply}\n\nIf you want, I can also show only desks, only chairs, or the biggest discounts first.`;
   }
   if (intent.type === 'category') {
     const list = buildCatalogProducts(catalog, intent.category);
