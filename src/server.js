@@ -37,7 +37,7 @@ function dedupeByKey(items, keyFn){
 }
 
 async function getSite(siteId){
-  const r=await pool.query('SELECT site_id AS id, name, url, whatsapp_number, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
+  const r=await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
   return r.rows[0];
 }
 async function searchProducts(siteId, message){
@@ -164,12 +164,12 @@ function formatFaqLine(f){
 function simpleAnswer(site, products, pages, message){
   if(products.length){
     const lines=products.map((p,i)=>`${i+1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency||'DKK'}`:''}\n${p.url}`);
-    return `I found these matching options on ${site.name}:\n\n${lines.join('\n\n')}\n\nDo you want a direct offer? Send your phone number, quantity, size and budget.`;
+    return `I found these matching options on ${site.name}:\n\n${lines.join('\n\n')}\n\nI can also help with sizing, availability, shipping, or returns. If you want, send your phone number and budget and I’ll help you next.`;
   }
   if(pages.length){
-    return `I found these relevant pages on ${site.name}:\n\n${pages.map((p,i)=>`${i+1}. ${p.title}\n${p.url}`).join('\n\n')}\n\nFor a direct offer, send your phone number and budget.`;
+    return `I found these relevant pages on ${site.name}:\n\n${pages.map((p,i)=>`${i+1}. ${p.title}\n${p.url}`).join('\n\n')}\n\nIf you want, I can also help you compare options or connect you to support.`;
   }
-  return `I could not find an exact product yet. Try product type + size + budget, for example: “height-adjustable desk 180x80 budget 1500”.\n\nWebsite: ${site.url}\n\nSend your phone number below and our team can help.`;
+  return `I’m here to help with product questions, shipping, returns, quotes, and general support.\n\nTry adding a product type, size, or budget, for example: “height-adjustable desk 180x80 budget 1500”.\n\nWebsite: ${site.url}`;
 }
 function buildAgentPrompt(site, message, products, pages, catalog, faqs, history, memory){
   const context = {
@@ -218,15 +218,16 @@ function buildAgentPrompt(site, message, products, pages, catalog, faqs, history
     {
       role: 'system',
       content: [
-        'You are a helpful AI sales agent for a Shopify store.',
+        'You are a professional customer support and sales agent for a Shopify store.',
         'Answer general questions naturally using your own knowledge when the store context does not contain the answer.',
-        'For store-specific questions, prefer the provided site, product, page, and conversation context.',
-        'If matching FAQ entries exist, prefer them for shipping, returns, hours, delivery, and contact questions.',
+        'For store-specific questions, prefer the provided site, product, page, FAQ, and conversation context.',
+        'If matching FAQ entries exist, prefer them for shipping, returns, hours, delivery, contact, and policy questions.',
         'If visitor memory exists, use it to personalize the answer, especially for budget, size, product category, and support preferences.',
         'If the user asks about products, recommend the best matching items, include links, and mention prices when available.',
+        'If the user asks for support, sound calm, clear, and reassuring. Offer next steps, and escalate only when needed.',
         'If the user asks to see all products, summarize the catalog snapshot and offer to narrow by budget, size, or category.',
         'If a store-specific fact is missing, say so clearly instead of inventing it.',
-        'Keep replies concise but helpful.'
+        'Keep replies concise, professional, and friendly.'
       ].join(' ')
     },
     {
