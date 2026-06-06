@@ -9,7 +9,7 @@ const pool = new Pool({ connectionString, ssl: connectionString.includes('sslmod
 
 async function initDb(){
   await pool.query(`CREATE TABLE IF NOT EXISTS sites(
-    id TEXT PRIMARY KEY,
+    site_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     whatsapp TEXT DEFAULT '',
@@ -18,7 +18,7 @@ async function initDb(){
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS products(
     id TEXT PRIMARY KEY,
-    site_id TEXT REFERENCES sites(id) ON DELETE CASCADE,
+    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
     title TEXT,
     description TEXT,
     price NUMERIC,
@@ -33,7 +33,7 @@ async function initDb(){
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS pages(
     id TEXT PRIMARY KEY,
-    site_id TEXT REFERENCES sites(id) ON DELETE CASCADE,
+    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
     title TEXT,
     url TEXT,
     content TEXT,
