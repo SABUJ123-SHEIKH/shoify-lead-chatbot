@@ -5,6 +5,15 @@
   const inferredApi = script && script.src ? new URL(script.src, window.location.href).origin : '';
   const API_BASE = window.KG_CHAT_API || scriptApi || inferredApi || window.location.origin;
   const SITE_ID = window.KG_SITE_ID || scriptSite || 'default';
+  const QUICK_ACTIONS = Array.isArray(window.KG_QUICK_ACTIONS) && window.KG_QUICK_ACTIONS.length
+    ? window.KG_QUICK_ACTIONS
+    : [
+        { label: 'All products', q: 'show all products' },
+        { label: 'Desks', q: 'show desks' },
+        { label: 'Chairs', q: 'show chairs' },
+        { label: 'Shipping', q: 'shipping and delivery' },
+        { label: 'Returns', q: 'returns policy' }
+      ];
   let leadId = localStorage.getItem('kg_lead_' + SITE_ID) || '';
 
   const css = `
@@ -70,7 +79,7 @@
       box-shadow:0 0 0 5px rgba(34,197,94,.18)
     }
     .kg-quick-actions{
-      display:flex;flex-wrap:wrap;gap:8px;padding:14px 14px 0;
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:14px 14px 0;
       background:linear-gradient(180deg,#f8fafc 0%,#ffffff 100%);
       border-bottom:1px solid #eef2f7
     }
@@ -187,12 +196,8 @@
           <div class="kg-status">Online</div>
         </div>
       </div>
-      <div class="kg-quick-actions">
-        <button class="kg-chip" data-q="show all products">All products</button>
-        <button class="kg-chip" data-q="show desks">Desks</button>
-        <button class="kg-chip" data-q="show chairs">Chairs</button>
-        <button class="kg-chip" data-q="shipping and delivery">Shipping</button>
-        <button class="kg-chip" data-q="returns policy">Returns</button>
+    <div class="kg-quick-actions">
+        ${QUICK_ACTIONS.map(action => `<button class="kg-chip" data-q="${String(action.q || action.label || '').replace(/"/g, '&quot;')}">${String(action.label || action.q || '')}</button>`).join('')}
       </div>
       <div class="kg-chat-body" id="kgBody">
         <div class="kg-msg kg-bot">Hi, I am your support agent. Tell me what you need, or choose a quick topic above.</div>
