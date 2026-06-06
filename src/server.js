@@ -37,7 +37,7 @@ function dedupeByKey(items, keyFn){
 }
 
 async function getSite(siteId){
-  const r=await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
+  const r=await pool.query('SELECT site_id AS id, name, url, whatsapp_number, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
   return r.rows[0];
 }
 async function searchProducts(siteId, message){
@@ -298,20 +298,6 @@ app.post('/api/leads',async(req,res)=>{const id=req.body.leadId||uuidv4(); const
 
 app.get('/admin/sites',admin,async(req,res)=>{const rows=(await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites ORDER BY created_at DESC')).rows; res.send(`<!doctype html><body style="font-family:Arial;padding:24px"><h1>Sites</h1><form method="post"><input name="id" placeholder="site id e.g. arnehus"><input name="name" placeholder="Name"><input name="url" placeholder="https://www.site.dk"><input name="whatsapp" placeholder="WhatsApp"><button>Add site</button></form><table border="1" cellpadding="8"><tr><th>ID</th><th>Name</th><th>URL</th><th>Actions</th></tr>${rows.map(s=>`<tr><td>${esc(s.id)}</td><td>${esc(s.name)}</td><td>${esc(s.url)}</td><td><a href="/admin/crawl?site=${esc(s.id)}">Sync</a> | <a href="/admin/pages?site=${esc(s.id)}">Products</a> | <a href="/admin/leads?site=${esc(s.id)}">Leads</a></td></tr>`).join('')}</table></body>`)});
 app.post('/admin/sites',admin,express.urlencoded({extended:true}),async(req,res)=>{const {id,name,url,whatsapp}=req.body; await pool.query('INSERT INTO sites(site_id,name,url,whatsapp) VALUES($1,$2,$3,$4) ON CONFLICT(site_id) DO UPDATE SET name=EXCLUDED.name,url=EXCLUDED.url,whatsapp=EXCLUDED.whatsapp',[id,name||id,url,whatsapp||'']); res.redirect('/admin/sites');});
-app.get('/admin/faqs',admin,async(req,res)=>{
-  const siteId=req.query.site||DEFAULT_SITE_ID;
-  const rows=(await pool.query('SELECT * FROM faq_entries WHERE site_id=$1 ORDER BY updated_at DESC LIMIT 200',[siteId])).rows;
-  res.send(`<!doctype html><body style="font-family:Arial;padding:24px"><h1>FAQs ${esc(siteId)}</h1><p><a href="/admin/leads?site=${esc(siteId)}">Back to leads</a></p><form method="post"><input name="question" placeholder="Question" style="width:100%;max-width:520px"><br><textarea name="answer" placeholder="Answer" style="width:100%;max-width:520px;height:90px;margin-top:8px"></textarea><br><input name="keywords" placeholder="shipping, returns, support" style="width:100%;max-width:520px;margin-top:8px"><input type="hidden" name="siteId" value="${esc(siteId)}"><br><button style="margin-top:8px">Add FAQ</button></form><table border="1" cellpadding="8" style="margin-top:20px"><tr><th>Question</th><th>Answer</th><th>Keywords</th></tr>${rows.map(f=>`<tr><td>${esc(f.question)}</td><td>${esc(f.answer)}</td><td>${esc(f.keywords||'')}</td></tr>`).join('')}</table></body>`);
-});
-app.post('/admin/faqs',admin,express.urlencoded({extended:true}),async(req,res)=>{
-  const siteId=req.body.siteId||DEFAULT_SITE_ID;
-  const question=String(req.body.question||'').trim();
-  const answer=String(req.body.answer||'').trim();
-  const keywords=String(req.body.keywords||'').trim();
-  if(!question || !answer) return res.status(400).send('Question and answer are required');
-  await pool.query('INSERT INTO faq_entries(id,site_id,question,answer,keywords,updated_at) VALUES($1,$2,$3,$4,$5,now())',[uuidv4(),siteId,question,answer,keywords]);
-  res.redirect(`/admin/faqs?site=${encodeURIComponent(siteId)}`);
-});
 app.get('/admin/crawl',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const site=await getSite(siteId); if(!site)return res.send('Site not found. Add it in /admin/sites'); const run=req.query.run==='1'; let msg=''; if(run){const pc=await syncShopifyProducts(site); const pg=await syncBasicPages(site); msg=`Synced ${pc} products and ${pg} pages.`;} res.send(`<body style="font-family:Arial;padding:24px"><h1>Sync ${esc(site.name)}</h1><p>${esc(msg)}</p><a href="/admin/crawl?site=${esc(site.id)}&run=1">Sync now</a> | <a href="/admin/pages?site=${esc(site.id)}">View products</a></body>`)});
 app.get('/admin/pages',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const rows=(await pool.query('SELECT title,price,currency,url,product_type FROM products WHERE site_id=$1 ORDER BY updated_at DESC LIMIT 300',[siteId])).rows; res.send(`<body style="font-family:Arial;padding:24px"><h1>Products ${esc(siteId)}</h1><table border="1" cellpadding="8"><tr><th>Title</th><th>Price</th><th>Type</th><th>URL</th></tr>${rows.map(p=>`<tr><td>${esc(p.title)}</td><td>${esc(p.price||'')} ${esc(p.currency||'')}</td><td>${esc(p.product_type||'')}</td><td><a href="${esc(p.url)}" target="_blank">Open</a></td></tr>`).join('')}</table></body>`)});
 app.get('/admin/leads',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const rows=(await pool.query('SELECT * FROM leads WHERE site_id=$1 ORDER BY created_at DESC LIMIT 200',[siteId])).rows; res.send(`<body style="font-family:Arial;padding:24px"><h1>Leads ${esc(siteId)}</h1><p><a href="/admin/faqs?site=${esc(siteId)}">Manage FAQs</a></p><table border="1" cellpadding="8"><tr><th>Date</th><th>Name</th><th>Phone</th><th>Email</th><th>Interest</th><th>Budget</th><th>Message</th></tr>${rows.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td>${esc(l.email)}</td><td>${esc(l.product_interest)}</td><td>${esc(l.budget)}</td><td>${esc(l.message)}</td></tr>`).join('')}</table></body>`)});
