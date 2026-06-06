@@ -26,7 +26,7 @@
       width:420px;max-width:calc(100vw - 32px);
       height:min(700px,calc(100vh - 110px));
       background:#fff;border:1px solid rgba(15,23,42,.08);
-      border-radius:24px;overflow:hidden;display:none;
+      border-radius:24px;overflow:hidden;display:none;flex-direction:column;
       box-shadow:0 26px 80px rgba(15,23,42,.24);
       font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     }
@@ -80,7 +80,7 @@
     }
     .kg-chip:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(15,23,42,.08);border-color:#b9c4d3}
     .kg-chat-body{
-      height:calc(100% - 270px);min-height:250px;overflow:auto;
+      flex:1 1 auto;min-height:180px;overflow:auto;
       padding:16px;background:
       radial-gradient(circle at top left,rgba(34,197,94,.06),transparent 28%),
       linear-gradient(180deg,#f8fafc 0%,#f7f8fb 100%);
@@ -127,8 +127,18 @@
       color:#64748b;font-size:12px;line-height:1.45;margin-top:4px
     }
     .kg-support-note strong{color:#0f172a}
+    .kg-escalate{
+      margin-top:12px;border-top:1px dashed #e5eaf1;padding-top:10px
+    }
+    .kg-escalate summary{
+      list-style:none;cursor:pointer;font-size:12px;font-weight:700;color:#0f172a;
+      display:flex;align-items:center;justify-content:space-between;gap:10px
+    }
+    .kg-escalate summary::-webkit-details-marker{display:none}
+    .kg-escalate summary::after{content:'+';color:#64748b;font-size:18px;line-height:1}
+    .kg-escalate[open] summary::after{content:'−'}
     .kg-form{
-      margin-top:12px;padding-top:12px;border-top:1px dashed #e5eaf1;
+      margin-top:10px;
       display:grid;grid-template-columns:1fr 1fr;gap:8px
     }
     .kg-form input,.kg-form textarea{
@@ -149,7 +159,6 @@
     }
     @media (max-width: 520px){
       .kg-chat-shell{right:16px;left:16px;bottom:78px;width:auto;max-width:none;height:min(78vh,700px)}
-      .kg-chat-body{height:calc(100% - 286px)}
       .kg-form{grid-template-columns:1fr}
       .kg-support-note{flex-direction:column;align-items:flex-start}
     }
@@ -195,16 +204,19 @@
           <span><strong>Usually replies in a few minutes.</strong> I can also forward details to your support team.</span>
           <span>Secure chat</span>
         </div>
-        <div class="kg-form">
-          <input id="kgName" placeholder="Name">
-          <input id="kgPhone" placeholder="Phone / WhatsApp">
-          <input id="kgEmail" placeholder="Email">
-          <input id="kgCompany" placeholder="Company">
-          <input id="kgInterest" placeholder="Product interest">
-          <input id="kgBudget" placeholder="Budget">
-          <textarea id="kgMessage" placeholder="Message for support"></textarea>
-          <button class="kg-save" id="kgSave">Send to support</button>
-        </div>
+        <details class="kg-escalate">
+          <summary>Need human follow-up?</summary>
+          <div class="kg-form">
+            <input id="kgName" placeholder="Name">
+            <input id="kgPhone" placeholder="Phone / WhatsApp">
+            <input id="kgEmail" placeholder="Email">
+            <input id="kgCompany" placeholder="Company">
+            <input id="kgInterest" placeholder="Product interest">
+            <input id="kgBudget" placeholder="Budget">
+            <textarea id="kgMessage" placeholder="Message for support"></textarea>
+            <button class="kg-save" id="kgSave">Send to support</button>
+          </div>
+        </details>
       </div>
     `;
 

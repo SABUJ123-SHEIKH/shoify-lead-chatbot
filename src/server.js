@@ -35,6 +35,38 @@ function dedupeByKey(items, keyFn){
     return true;
   });
 }
+function detectIntent(message){
+  const text = String(message || '').toLowerCase();
+  if (/\b(all\s+products?|show\s+all|catalog|browse\s+all)\b/.test(text)) return { type:'catalog' };
+  if (/\b(shipping|delivery|deliver|ship)\b/.test(text)) return { type:'faq', topic:'shipping' };
+  if (/\b(return|refund|warranty|exchange)\b/.test(text)) return { type:'faq', topic:'returns' };
+  if (/\b(show|browse|find|need|looking for)\b/.test(text) && /\bdesk(s)?\b/.test(text)) return { type:'category', category:'desk' };
+  if (/\b(show|browse|find|need|looking for)\b/.test(text) && /\bchair(s)?\b/.test(text)) return { type:'category', category:'chair' };
+  if (/\bhelp|support|agent|human|contact\b/.test(text)) return { type:'support' };
+  return { type:'general' };
+}
+function formatProductList(products, siteName, heading){
+  if(!products.length) return null;
+  const lines = products.map((p, i) => `${i + 1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency || 'DKK'}` : ''}\n${p.url}`);
+  return `${heading || `Here are some options on ${siteName}:`}\n\n${lines.join('\n\n')}`;
+}
+function formatFaqReply(faqs, fallback){
+  if(faqs && faqs.length){
+    return faqs.map(f => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n');
+  }
+  return fallback;
+}
+function buildCatalogProducts(catalog, category){
+  const filtered = category
+    ? catalog.filter(p => {
+        const hay = `${p.title} ${p.product_type || ''} ${p.tags || ''}`.toLowerCase();
+        return category === 'desk'
+          ? /\bdesk|table|workstation|work table|table\b/.test(hay)
+          : /\bchair|seat|stool\b/.test(hay);
+      })
+    : catalog;
+  return filtered.slice(0, 8);
+}
 
 async function getSite(siteId){
   const r=await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
@@ -162,14 +194,16 @@ function formatFaqLine(f){
   return `- Q: ${f.question}\n  A: ${f.answer}`;
 }
 function simpleAnswer(site, products, pages, message){
+  const siteName = site && site.name ? site.name : 'this store';
+  const siteUrl = site && site.url ? site.url : '';
   if(products.length){
     const lines=products.map((p,i)=>`${i+1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency||'DKK'}`:''}\n${p.url}`);
-    return `I found these matching options on ${site.name}:\n\n${lines.join('\n\n')}\n\nI can also help with sizing, availability, shipping, or returns. If you want, send your phone number and budget and I’ll help you next.`;
+    return `I found these matching options on ${siteName}:\n\n${lines.join('\n\n')}\n\nI can also help with sizing, availability, shipping, or returns. If you want, send your phone number and budget and I’ll help you next.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
   }
   if(pages.length){
-    return `I found these relevant pages on ${site.name}:\n\n${pages.map((p,i)=>`${i+1}. ${p.title}\n${p.url}`).join('\n\n')}\n\nIf you want, I can also help you compare options or connect you to support.`;
+    return `I found these relevant pages on ${siteName}:\n\n${pages.map((p,i)=>`${i+1}. ${p.title}\n${p.url}`).join('\n\n')}\n\nIf you want, I can also help you compare options or connect you to support.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
   }
-  return `I’m here to help with product questions, shipping, returns, quotes, and general support.\n\nTry adding a product type, size, or budget, for example: “height-adjustable desk 180x80 budget 1500”.\n\nWebsite: ${site.url}`;
+  return `I’m here to help with product questions, shipping, returns, quotes, and general support.\n\nTry adding a product type, size, or budget, for example: “height-adjustable desk 180x80 budget 1500”.${siteUrl ? `\n\nWebsite: ${siteUrl}` : ''}`;
 }
 function buildAgentPrompt(site, message, products, pages, catalog, faqs, history, memory){
   const context = {
@@ -237,10 +271,32 @@ function buildAgentPrompt(site, message, products, pages, catalog, faqs, history
   ];
 }
 async function aiAnswer(site, products, pages, message, leadId){
+  const intent = detectIntent(message);
+  const catalog = dedupeByKey(await listCatalog(site.id, intent.type === 'catalog' ? 60 : 24), p => `${p.title}|${p.url}`);
+  if (intent.type === 'catalog') {
+    const list = buildCatalogProducts(catalog);
+    const reply = formatProductList(list, site.name, `Here are some products from ${site.name}:`) || simpleAnswer(site, [], pages, message);
+    return `${reply}\n\nIf you want, I can narrow this down by desk, chair, budget, or size.`;
+  }
+  if (intent.type === 'category') {
+    const list = buildCatalogProducts(catalog, intent.category);
+    const reply = formatProductList(list, site.name, `Here are the best ${intent.category === 'desk' ? 'desk' : 'chair'} options I found on ${site.name}:`) || simpleAnswer(site, [], pages, message);
+    return `${reply}\n\nIf you want, I can narrow this down by budget, size, or color.`;
+  }
+  if (intent.type === 'faq') {
+    const faqs = await searchFaqs(site.id, intent.topic);
+    const matched = faqs.length ? faqs : await searchFaqs(site.id, message);
+    const faqReply = formatFaqReply(matched, null);
+    if (faqReply) return faqReply;
+    return intent.topic === 'returns'
+      ? `I can help with returns and refunds, but I do not see a saved policy for ${site.name} yet. If you want, add it in /admin/faqs so I can answer it precisely.`
+      : `I can help with shipping and delivery, but I do not see a saved shipping policy for ${site.name} yet. If you want, add it in /admin/faqs so I can answer it precisely.`;
+  }
+  if (intent.type === 'support') {
+    return `I’m here to help as your support agent. I can assist with product selection, shipping, returns, quotes, and general questions. If you tell me what you need, I’ll guide you step by step.${site && site.url ? `\n\nWebsite: ${site.url}` : ''}`;
+  }
   if(!openai) return simpleAnswer(site,products,pages,message);
   try{
-    const wantsCatalog = /\b(all\s+(products?|items?|catalog)|show\s+all|catalog)\b/i.test(message);
-    const catalog = dedupeByKey(await listCatalog(site.id, wantsCatalog ? 60 : 24), p => `${p.title}|${p.url}`);
     const faqs = await searchFaqs(site.id, message);
     const history = await recentConversation(site.id, leadId, 8);
     const memory = await loadVisitorMemory(site.id, leadId);
