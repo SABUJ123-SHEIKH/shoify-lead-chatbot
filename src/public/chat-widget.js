@@ -173,40 +173,42 @@
         right:16px;bottom:16px;padding:13px 16px;font-size:13px
       }
       .kg-chat-shell{
-        right:10px;left:10px;top:10px;bottom:74px;
+        right:8px;left:8px;top:8px;bottom:8px;
         width:auto;max-width:none;height:auto;max-height:none;
-        border-radius:22px
+        border-radius:20px
       }
-      .kg-chat-top{padding:16px 16px 14px}
-      .kg-chat-topbar{align-items:flex-start}
-      .kg-avatar{width:40px;height:40px;border-radius:14px}
-      .kg-title{font-size:17px}
+      .kg-chat-top{padding:14px 14px 12px}
+      .kg-chat-topbar{align-items:flex-start;gap:10px}
+      .kg-avatar{width:38px;height:38px;border-radius:13px}
+      .kg-title{font-size:16px}
       .kg-subtitle{
-        max-width:none;font-size:12px;line-height:1.4
+        max-width:none;font-size:11px;line-height:1.35;margin-top:4px
       }
       .kg-status{padding:7px 9px;font-size:11px}
       .kg-quick-actions{
-        padding:12px 12px 0;gap:7px;grid-template-columns:repeat(2,minmax(0,1fr))
+        display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+        gap:8px;padding:10px 10px 10px 12px;grid-template-columns:none;
+        scroll-snap-type:x proximity
       }
       .kg-chip{
-        width:100%;padding:9px 10px;font-size:11px;min-height:38px;
-        white-space:normal;line-height:1.2
+        flex:0 0 auto;width:auto;min-width:max-content;padding:9px 12px;font-size:11px;
+        min-height:38px;white-space:nowrap;line-height:1.2;scroll-snap-align:start
       }
       .kg-chat-body{
-        padding:14px
+        padding:12px 12px 10px
       }
       .kg-msg{
-        max-width:92%;font-size:13px;line-height:1.5;border-radius:14px
+        max-width:92%;font-size:13px;line-height:1.45;border-radius:14px;margin:8px 0
       }
-      .kg-chat-footer{padding:12px}
+      .kg-chat-footer{padding:12px 12px 13px}
       .kg-compose{flex-direction:column;align-items:stretch;margin-bottom:8px}
       .kg-input{
-        min-height:72px;padding:12px 12px;font-size:13px;border-radius:13px
+        min-height:64px;padding:12px 12px;font-size:13px;border-radius:13px
       }
       .kg-send{
         width:100%;padding:12px 14px;border-radius:13px;font-size:13px
       }
-      .kg-support-note{flex-direction:column;align-items:flex-start;gap:6px;margin-top:6px}
+      .kg-support-note{display:none}
       .kg-escalate{margin-top:10px;padding-top:9px}
       .kg-form{grid-template-columns:1fr}
       .kg-form input,.kg-form textarea{
