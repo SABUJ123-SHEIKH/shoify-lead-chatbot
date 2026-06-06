@@ -52,6 +52,23 @@ async function initDb(){
     site_id TEXT, lead_id TEXT, sender TEXT, message TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
   )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS visitor_memory(
+    id TEXT PRIMARY KEY,
+    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
+    lead_id TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    preferences JSONB DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(site_id, lead_id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS faq_entries(
+    id TEXT PRIMARY KEY,
+    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    keywords TEXT DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT now()
+  )`);
 }
 
 module.exports = { pool, initDb };

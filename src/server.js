@@ -26,6 +26,15 @@ function esc(v=''){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function admin(req,res,next){const auth=req.headers.authorization||''; const token=auth.startsWith('Basic ')?auth.slice(6):''; const [u,p]=Buffer.from(token,'base64').toString().split(':'); if(u===ADMIN_USER&&p===ADMIN_PASSWORD)return next(); res.set('WWW-Authenticate','Basic realm="Admin"'); res.status(401).send('Login required');}
 function normUrl(base,path){ try { return new URL(path, base).toString(); } catch(e){ return path; } }
 function tokens(text){ return String(text||'').toLowerCase().replace(/[^a-z0-9æøåäöüéèàç\s-]/gi,' ').split(/\s+/).filter(w=>w.length>2); }
+function dedupeByKey(items, keyFn){
+  const seen = new Set();
+  return items.filter(item => {
+    const key = keyFn(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 async function getSite(siteId){
   const r=await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites WHERE site_id=$1',[siteId]);
@@ -47,6 +56,111 @@ async function searchPages(siteId,message){
   const sql=`SELECT *, (${words.map((_,i)=>`CASE WHEN lower(title||' '||coalesce(content,'')) LIKE lower($${i+2}) THEN 1 ELSE 0 END`).join(' + ')}) AS score FROM pages WHERE site_id=$1 ORDER BY score DESC LIMIT 3`;
   const r=await pool.query(sql,[siteId,...like]); return r.rows.filter(x=>Number(x.score)>0);
 }
+async function searchFaqs(siteId,message){
+  const words=tokens(message).slice(0,10); if(!words.length)return [];
+  const like=words.map(w=>`%${w}%`);
+  const sql=`SELECT *, (${words.map((_,i)=>`CASE WHEN lower(question||' '||answer||' '||coalesce(keywords,'')) LIKE lower($${i+2}) THEN 1 ELSE 0 END`).join(' + ')}) AS score FROM faq_entries WHERE site_id=$1 ORDER BY score DESC, updated_at DESC LIMIT 5`;
+  const r=await pool.query(sql,[siteId,...like]); return r.rows.filter(x=>Number(x.score)>0);
+}
+async function listCatalog(siteId, limit = 18){
+  const r = await pool.query(
+    `SELECT title, price, currency, url, image, product_type, vendor, tags
+     FROM products
+     WHERE site_id=$1
+     ORDER BY updated_at DESC
+     LIMIT $2`,
+    [siteId, limit]
+  );
+  return r.rows;
+}
+async function recentConversation(siteId, leadId, limit = 8){
+  if(!leadId) return [];
+  const r = await pool.query(
+    `SELECT sender, message, created_at
+     FROM chat_messages
+     WHERE site_id=$1 AND lead_id=$2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [siteId, leadId, limit]
+  );
+  return r.rows.reverse();
+}
+async function loadVisitorMemory(siteId, leadId){
+  if(!leadId) return null;
+  const r = await pool.query(
+    `SELECT lead_id, summary, preferences, updated_at
+     FROM visitor_memory
+     WHERE site_id=$1 AND lead_id=$2
+     LIMIT 1`,
+    [siteId, leadId]
+  );
+  return r.rows[0] || null;
+}
+function extractMemoryHints(message){
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+  const preferences = {};
+  const budget = lower.match(/\b(?:budget|under|below|max(?:imum)?|up to|around)\s*([$€£]?\s?\d[\d,]*(?:\.\d+)?)\b/i)
+    || lower.match(/\b([$€£]\s?\d[\d,]*(?:\.\d+)?)\b/i);
+  if (budget) preferences.budget = budget[1].replace(/\s+/g, ' ').trim();
+  const size = lower.match(/\b(\d{2,4}\s*[x×]\s*\d{2,4}(?:\s*[x×]\s*\d{2,4})?)\b/i);
+  if (size) preferences.size = size[1].replace(/×/g, 'x');
+  const categoryMap = [
+    ['desk', ['desk', 'table', 'workstation', 'work table']],
+    ['chair', ['chair', 'stool', 'seat']],
+    ['sofa', ['sofa', 'couch', 'settee']],
+    ['storage', ['storage', 'cabinet', 'shelf', 'drawer']],
+    ['lighting', ['lamp', 'lighting', 'light fixture']],
+    ['accessories', ['accessory', 'accessories', 'addon', 'add-on']]
+  ];
+  for (const [category, terms] of categoryMap) {
+    if (terms.some(term => lower.includes(term))) {
+      preferences.category = category;
+      break;
+    }
+  }
+  if (/\b(express|fast|urgent|asap)\b/.test(lower)) preferences.speed = 'fast';
+  if (/\b(return|refund|warranty|shipping|delivery|support|contact)\b/.test(lower)) preferences.topic = 'policy';
+  return preferences;
+}
+function mergePreferences(existing = {}, incoming = {}){
+  return Object.assign({}, existing, Object.fromEntries(Object.entries(incoming).filter(([,v]) => v !== undefined && v !== null && String(v).trim() !== '')));
+}
+function summarizeMemory(preferences = {}){
+  const parts = [];
+  if (preferences.category) parts.push(`Category: ${preferences.category}`);
+  if (preferences.budget) parts.push(`Budget: ${preferences.budget}`);
+  if (preferences.size) parts.push(`Size: ${preferences.size}`);
+  if (preferences.topic) parts.push(`Topic: ${preferences.topic}`);
+  if (preferences.speed) parts.push(`Speed: ${preferences.speed}`);
+  return parts.join(' | ');
+}
+async function saveVisitorMemory(siteId, leadId, patch){
+  if(!leadId) return null;
+  const existing = await loadVisitorMemory(siteId, leadId);
+  const preferences = mergePreferences(existing ? existing.preferences : {}, patch.preferences || {});
+  const summary = patch.summary || summarizeMemory(preferences);
+  const id = existing ? existing.lead_id : uuidv4();
+  await pool.query(
+    `INSERT INTO visitor_memory(id, site_id, lead_id, summary, preferences, updated_at)
+     VALUES($1,$2,$3,$4,$5,now())
+     ON CONFLICT(site_id, lead_id)
+     DO UPDATE SET summary=EXCLUDED.summary, preferences=EXCLUDED.preferences, updated_at=now()`,
+    [id, siteId, leadId, summary, preferences]
+  );
+  return { lead_id: leadId, summary, preferences };
+}
+function formatProductLine(p){
+  const price = p.price ? `${p.price} ${p.currency || 'DKK'}` : 'price on request';
+  const type = p.product_type ? ` | type: ${p.product_type}` : '';
+  return `- ${p.title} (${price})${type}\n  ${p.url}`;
+}
+function formatPageLine(p){
+  return `- ${p.title}\n  ${p.url}`;
+}
+function formatFaqLine(f){
+  return `- Q: ${f.question}\n  A: ${f.answer}`;
+}
 function simpleAnswer(site, products, pages, message){
   if(products.length){
     const lines=products.map((p,i)=>`${i+1}. ${p.title}${p.price ? ` – ${p.price} ${p.currency||'DKK'}`:''}\n${p.url}`);
@@ -57,11 +171,81 @@ function simpleAnswer(site, products, pages, message){
   }
   return `I could not find an exact product yet. Try product type + size + budget, for example: “height-adjustable desk 180x80 budget 1500”.\n\nWebsite: ${site.url}\n\nSend your phone number below and our team can help.`;
 }
-async function aiAnswer(site, products, pages, message){
+function buildAgentPrompt(site, message, products, pages, catalog, faqs, history, memory){
+  const context = {
+    site: {
+      id: site.id,
+      name: site.name,
+      url: site.url,
+      whatsapp: site.whatsapp || '',
+      brand_color: site.brand_color || ''
+    },
+    recent_products: products.map(p => ({
+      title: p.title,
+      price: p.price,
+      currency: p.currency,
+      url: p.url,
+      product_type: p.product_type,
+      vendor: p.vendor,
+      tags: p.tags
+    })),
+    catalog_snapshot: catalog.map(p => ({
+      title: p.title,
+      price: p.price,
+      currency: p.currency,
+      url: p.url,
+      product_type: p.product_type,
+      vendor: p.vendor,
+      tags: p.tags
+    })),
+    relevant_pages: pages.map(p => ({
+      title: p.title,
+      url: p.url,
+      content: String(p.content || '').slice(0, 400)
+    })),
+    faq_entries: faqs.map(f => ({
+      question: f.question,
+      answer: f.answer,
+      keywords: f.keywords
+    })),
+    visitor_memory: memory ? { summary: memory.summary, preferences: memory.preferences } : null,
+    conversation: history.map(m => ({
+      role: m.sender === 'bot' ? 'assistant' : 'user',
+      message: m.message
+    }))
+  };
+  return [
+    {
+      role: 'system',
+      content: [
+        'You are a helpful AI sales agent for a Shopify store.',
+        'Answer general questions naturally using your own knowledge when the store context does not contain the answer.',
+        'For store-specific questions, prefer the provided site, product, page, and conversation context.',
+        'If matching FAQ entries exist, prefer them for shipping, returns, hours, delivery, and contact questions.',
+        'If the user asks about products, recommend the best matching items, include links, and mention prices when available.',
+        'If the user asks to see all products, summarize the catalog snapshot and offer to narrow by budget, size, or category.',
+        'If a store-specific fact is missing, say so clearly instead of inventing it.',
+        'Keep replies concise but helpful.'
+      ].join(' ')
+    },
+    {
+      role: 'user',
+      content: `User question: ${message}\n\nStore context JSON:\n${JSON.stringify(context)}`
+    }
+  ];
+}
+async function aiAnswer(site, products, pages, message, leadId){
   if(!openai) return simpleAnswer(site,products,pages,message);
-  const context = JSON.stringify({site:{name:site.name,url:site.url},products:products.map(p=>({title:p.title,price:p.price,currency:p.currency,url:p.url,type:p.product_type})),pages:pages.map(p=>({title:p.title,url:p.url,content:String(p.content||'').slice(0,400)}))});
   try{
-    const resp=await openai.responses.create({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',input:[{role:'system',content:'You are a professional sales chatbot. Answer only from provided website/product context. Include product links and prices when available. Ask for phone, quantity, size, and budget for offer. Be concise.'},{role:'user',content:`Question: ${message}\nContext: ${context}`} ]});
+    const wantsCatalog = /\b(all\s+(products?|items?|catalog)|show\s+all|catalog)\b/i.test(message);
+    const catalog = dedupeByKey(await listCatalog(site.id, wantsCatalog ? 60 : 24), p => `${p.title}|${p.url}`);
+    const faqs = await searchFaqs(site.id, message);
+    const history = await recentConversation(site.id, leadId, 8);
+    const memory = await loadVisitorMemory(site.id, leadId);
+    const resp=await openai.responses.create({
+      model:process.env.OPENAI_MODEL||'gpt-4.1-mini',
+      input: buildAgentPrompt(site, message, products, pages, catalog, faqs, history, memory)
+    });
     return resp.output_text || simpleAnswer(site,products,pages,message);
   }catch(e){return simpleAnswer(site,products,pages,message);}
 }
@@ -101,17 +285,35 @@ app.get('/health',async(req,res)=>{const p=await pool.query('SELECT COUNT(*)::in
 app.post('/api/chat', async(req,res)=>{
   const siteId=req.body.siteId||req.query.site||DEFAULT_SITE_ID; const message=String(req.body.message||'').slice(0,1000); if(!message)return res.status(400).json({error:'Message required'});
   const site=await getSite(siteId); if(!site)return res.json({reply:`This chatbot is not configured for site_id "${siteId}". Add it in /admin/sites first.`,leadId:req.body.leadId||uuidv4()});
-  const leadId=req.body.leadId||uuidv4(); const products=await searchProducts(siteId,message); const pages=await searchPages(siteId,message); const reply=await aiAnswer(site,products,pages,message);
+  const leadId=req.body.leadId||uuidv4(); const products=await searchProducts(siteId,message); const pages=await searchPages(siteId,message); const reply=await aiAnswer(site,products,pages,message,leadId);
   await pool.query('INSERT INTO chat_messages(id,site_id,lead_id,sender,message) VALUES($1,$2,$3,$4,$5)',[uuidv4(),siteId,leadId,'customer',message]);
   await pool.query('INSERT INTO chat_messages(id,site_id,lead_id,sender,message) VALUES($1,$2,$3,$4,$5)',[uuidv4(),siteId,leadId,'bot',reply]);
+  await saveVisitorMemory(siteId, leadId, {
+    preferences: extractMemoryHints(message),
+    summary: summarizeMemory(extractMemoryHints(message))
+  });
   res.json({leadId,reply});
 });
-app.post('/api/leads',async(req,res)=>{const id=req.body.leadId||uuidv4(); const siteId=req.body.siteId||DEFAULT_SITE_ID; const d=req.body||{}; if(!d.phone&&!d.email)return res.status(400).json({error:'Phone or email required'}); await pool.query(`INSERT INTO leads(id,site_id,name,email,phone,company,product_interest,budget,message,source_page) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,email=EXCLUDED.email,phone=EXCLUDED.phone,company=EXCLUDED.company,product_interest=EXCLUDED.product_interest,budget=EXCLUDED.budget,message=EXCLUDED.message,source_page=EXCLUDED.source_page`,[id,siteId,d.name||'',d.email||'',d.phone||'',d.company||'',d.productInterest||'',d.budget||'',d.message||'',d.sourcePage||'']); res.json({ok:true,leadId:id});});
+app.post('/api/leads',async(req,res)=>{const id=req.body.leadId||uuidv4(); const siteId=req.body.siteId||DEFAULT_SITE_ID; const d=req.body||{}; if(!d.phone&&!d.email)return res.status(400).json({error:'Phone or email required'}); await pool.query(`INSERT INTO leads(id,site_id,name,email,phone,company,product_interest,budget,message,source_page) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,email=EXCLUDED.email,phone=EXCLUDED.phone,company=EXCLUDED.company,product_interest=EXCLUDED.product_interest,budget=EXCLUDED.budget,message=EXCLUDED.message,source_page=EXCLUDED.source_page`,[id,siteId,d.name||'',d.email||'',d.phone||'',d.company||'',d.productInterest||'',d.budget||'',d.message||'',d.sourcePage||'']); await saveVisitorMemory(siteId, id, { preferences: mergePreferences(extractMemoryHints(d.message || ''), { phone: d.phone || '', email: d.email || '', company: d.company || '', product_interest: d.productInterest || '', budget: d.budget || '' }), summary: summarizeMemory(mergePreferences(extractMemoryHints(d.message || ''), { phone: d.phone || '', email: d.email || '', company: d.company || '', product_interest: d.productInterest || '', budget: d.budget || '' })) }); res.json({ok:true,leadId:id});});
 
 app.get('/admin/sites',admin,async(req,res)=>{const rows=(await pool.query('SELECT site_id AS id, name, url, whatsapp, brand_color, created_at FROM sites ORDER BY created_at DESC')).rows; res.send(`<!doctype html><body style="font-family:Arial;padding:24px"><h1>Sites</h1><form method="post"><input name="id" placeholder="site id e.g. arnehus"><input name="name" placeholder="Name"><input name="url" placeholder="https://www.site.dk"><input name="whatsapp" placeholder="WhatsApp"><button>Add site</button></form><table border="1" cellpadding="8"><tr><th>ID</th><th>Name</th><th>URL</th><th>Actions</th></tr>${rows.map(s=>`<tr><td>${esc(s.id)}</td><td>${esc(s.name)}</td><td>${esc(s.url)}</td><td><a href="/admin/crawl?site=${esc(s.id)}">Sync</a> | <a href="/admin/pages?site=${esc(s.id)}">Products</a> | <a href="/admin/leads?site=${esc(s.id)}">Leads</a></td></tr>`).join('')}</table></body>`)});
 app.post('/admin/sites',admin,express.urlencoded({extended:true}),async(req,res)=>{const {id,name,url,whatsapp}=req.body; await pool.query('INSERT INTO sites(site_id,name,url,whatsapp) VALUES($1,$2,$3,$4) ON CONFLICT(site_id) DO UPDATE SET name=EXCLUDED.name,url=EXCLUDED.url,whatsapp=EXCLUDED.whatsapp',[id,name||id,url,whatsapp||'']); res.redirect('/admin/sites');});
+app.get('/admin/faqs',admin,async(req,res)=>{
+  const siteId=req.query.site||DEFAULT_SITE_ID;
+  const rows=(await pool.query('SELECT * FROM faq_entries WHERE site_id=$1 ORDER BY updated_at DESC LIMIT 200',[siteId])).rows;
+  res.send(`<!doctype html><body style="font-family:Arial;padding:24px"><h1>FAQs ${esc(siteId)}</h1><p><a href="/admin/leads?site=${esc(siteId)}">Back to leads</a></p><form method="post"><input name="question" placeholder="Question" style="width:100%;max-width:520px"><br><textarea name="answer" placeholder="Answer" style="width:100%;max-width:520px;height:90px;margin-top:8px"></textarea><br><input name="keywords" placeholder="shipping, returns, support" style="width:100%;max-width:520px;margin-top:8px"><input type="hidden" name="siteId" value="${esc(siteId)}"><br><button style="margin-top:8px">Add FAQ</button></form><table border="1" cellpadding="8" style="margin-top:20px"><tr><th>Question</th><th>Answer</th><th>Keywords</th></tr>${rows.map(f=>`<tr><td>${esc(f.question)}</td><td>${esc(f.answer)}</td><td>${esc(f.keywords||'')}</td></tr>`).join('')}</table></body>`);
+});
+app.post('/admin/faqs',admin,express.urlencoded({extended:true}),async(req,res)=>{
+  const siteId=req.body.siteId||DEFAULT_SITE_ID;
+  const question=String(req.body.question||'').trim();
+  const answer=String(req.body.answer||'').trim();
+  const keywords=String(req.body.keywords||'').trim();
+  if(!question || !answer) return res.status(400).send('Question and answer are required');
+  await pool.query('INSERT INTO faq_entries(id,site_id,question,answer,keywords,updated_at) VALUES($1,$2,$3,$4,$5,now())',[uuidv4(),siteId,question,answer,keywords]);
+  res.redirect(`/admin/faqs?site=${encodeURIComponent(siteId)}`);
+});
 app.get('/admin/crawl',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const site=await getSite(siteId); if(!site)return res.send('Site not found. Add it in /admin/sites'); const run=req.query.run==='1'; let msg=''; if(run){const pc=await syncShopifyProducts(site); const pg=await syncBasicPages(site); msg=`Synced ${pc} products and ${pg} pages.`;} res.send(`<body style="font-family:Arial;padding:24px"><h1>Sync ${esc(site.name)}</h1><p>${esc(msg)}</p><a href="/admin/crawl?site=${esc(site.id)}&run=1">Sync now</a> | <a href="/admin/pages?site=${esc(site.id)}">View products</a></body>`)});
 app.get('/admin/pages',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const rows=(await pool.query('SELECT title,price,currency,url,product_type FROM products WHERE site_id=$1 ORDER BY updated_at DESC LIMIT 300',[siteId])).rows; res.send(`<body style="font-family:Arial;padding:24px"><h1>Products ${esc(siteId)}</h1><table border="1" cellpadding="8"><tr><th>Title</th><th>Price</th><th>Type</th><th>URL</th></tr>${rows.map(p=>`<tr><td>${esc(p.title)}</td><td>${esc(p.price||'')} ${esc(p.currency||'')}</td><td>${esc(p.product_type||'')}</td><td><a href="${esc(p.url)}" target="_blank">Open</a></td></tr>`).join('')}</table></body>`)});
-app.get('/admin/leads',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const rows=(await pool.query('SELECT * FROM leads WHERE site_id=$1 ORDER BY created_at DESC LIMIT 200',[siteId])).rows; res.send(`<body style="font-family:Arial;padding:24px"><h1>Leads ${esc(siteId)}</h1><table border="1" cellpadding="8"><tr><th>Date</th><th>Name</th><th>Phone</th><th>Email</th><th>Interest</th><th>Budget</th><th>Message</th></tr>${rows.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td>${esc(l.email)}</td><td>${esc(l.product_interest)}</td><td>${esc(l.budget)}</td><td>${esc(l.message)}</td></tr>`).join('')}</table></body>`)});
+app.get('/admin/leads',admin,async(req,res)=>{const siteId=req.query.site||DEFAULT_SITE_ID; const rows=(await pool.query('SELECT * FROM leads WHERE site_id=$1 ORDER BY created_at DESC LIMIT 200',[siteId])).rows; res.send(`<body style="font-family:Arial;padding:24px"><h1>Leads ${esc(siteId)}</h1><p><a href="/admin/faqs?site=${esc(siteId)}">Manage FAQs</a></p><table border="1" cellpadding="8"><tr><th>Date</th><th>Name</th><th>Phone</th><th>Email</th><th>Interest</th><th>Budget</th><th>Message</th></tr>${rows.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.name)}</td><td>${esc(l.phone)}</td><td>${esc(l.email)}</td><td>${esc(l.product_interest)}</td><td>${esc(l.budget)}</td><td>${esc(l.message)}</td></tr>`).join('')}</table></body>`)});
 
 initDb().then(()=>app.listen(PORT,()=>console.log('AI Agent Chatbot running on '+PORT))).catch(e=>{console.error(e); process.exit(1);});
