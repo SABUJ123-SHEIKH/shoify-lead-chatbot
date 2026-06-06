@@ -1,70 +1,56 @@
 const { Pool } = require('pg');
 
-if (!process.env.DATABASE_URL) {
-  console.warn('DATABASE_URL is missing. Add PostgreSQL/Neon URL in Render Environment.');
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('DATABASE_URL is missing. Add Neon/PostgreSQL connection string in Render Environment.');
+  process.exit(1);
 }
+const pool = new Pool({ connectionString, ssl: connectionString.includes('sslmode=require') ? undefined : { rejectUnauthorized: false } });
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
-});
-
-async function initDb() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS sites (
-    site_id TEXT PRIMARY KEY,
-    name TEXT,
-    website_url TEXT NOT NULL,
-    whatsapp_number TEXT,
-    brand_color TEXT DEFAULT '#111111',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  )`);
-
-  await pool.query(`CREATE TABLE IF NOT EXISTS products (
+async function initDb(){
+  await pool.query(`CREATE TABLE IF NOT EXISTS sites(
     id TEXT PRIMARY KEY,
-    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    whatsapp TEXT DEFAULT '',
+    brand_color TEXT DEFAULT '#111111',
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS products(
+    id TEXT PRIMARY KEY,
+    site_id TEXT REFERENCES sites(id) ON DELETE CASCADE,
     title TEXT,
-    url TEXT,
+    description TEXT,
     price NUMERIC,
     currency TEXT DEFAULT 'DKK',
-    description TEXT,
+    url TEXT,
     image TEXT,
     product_type TEXT,
     vendor TEXT,
     tags TEXT,
     raw JSONB,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT now()
   )`);
-
-  await pool.query(`CREATE TABLE IF NOT EXISTS pages (
+  await pool.query(`CREATE TABLE IF NOT EXISTS pages(
     id TEXT PRIMARY KEY,
-    site_id TEXT REFERENCES sites(site_id) ON DELETE CASCADE,
+    site_id TEXT REFERENCES sites(id) ON DELETE CASCADE,
     title TEXT,
     url TEXT,
     content TEXT,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    type TEXT DEFAULT 'page',
+    updated_at TIMESTAMPTZ DEFAULT now()
   )`);
-
-  await pool.query(`CREATE TABLE IF NOT EXISTS leads (
+  await pool.query(`CREATE TABLE IF NOT EXISTS leads(
     id TEXT PRIMARY KEY,
     site_id TEXT,
-    name TEXT,
-    email TEXT,
-    phone TEXT,
-    company TEXT,
-    product_interest TEXT,
-    budget TEXT,
-    message TEXT,
-    source_page TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    name TEXT, email TEXT, phone TEXT, company TEXT,
+    product_interest TEXT, budget TEXT, message TEXT, source_page TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
   )`);
-
-  await pool.query(`CREATE TABLE IF NOT EXISTS chat_messages (
+  await pool.query(`CREATE TABLE IF NOT EXISTS chat_messages(
     id TEXT PRIMARY KEY,
-    lead_id TEXT,
-    site_id TEXT,
-    sender TEXT,
-    message TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    site_id TEXT, lead_id TEXT, sender TEXT, message TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
   )`);
 }
 

@@ -1,25 +1,21 @@
 {
-  "name": "smart-multisite-shopify-chatbot",
-  "version": "3.0.0",
+  "name": "ai-agent-multisite-shopify-chatbot",
+  "version": "4.0.0",
   "private": true,
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
-  },
+  "type": "commonjs",
+  "scripts": {"start":"node src/server.js","dev":"nodemon src/server.js"},
   "dependencies": {
-    "cheerio": "latest",
-    "cors": "latest",
-    "dotenv": "latest",
-    "express": "latest",
-    "helmet": "latest",
-    "node-fetch": "2.7.0",
-    "pg": "latest",
-    "uuid": "latest"
+    "@neondatabase/serverless":"latest",
+    "cheerio":"latest",
+    "cors":"latest",
+    "dotenv":"latest",
+    "express":"latest",
+    "helmet":"latest",
+    "node-fetch":"2.7.0",
+    "openai":"latest",
+    "pg":"latest",
+    "uuid":"latest"
   },
-  "devDependencies": {
-    "nodemon": "latest"
-  },
-  "engines": {
-    "node": "20.x"
-  }
+  "devDependencies": {"nodemon":"latest"},
+  "engines": {"node":"20.x"}
 }

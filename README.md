@@ -1,32 +1,37 @@
-# Smart Chatbot V3 Clean (PostgreSQL only)
+# AI Agent Multi-site Shopify Chatbot v4
 
-Deploy-ready for Render. No sqlite3 dependency.
+A Render-ready AI sales agent chatbot for 10-15 websites. It syncs Shopify products from `/products.json`, stores products/leads in PostgreSQL/Neon, answers customer questions with product links/prices, and collects leads.
 
-## Render settings
-- Root Directory: empty if this package is repo root
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Node: 20
+## Render setup
+Build command: `npm install`
+Start command: `npm start`
 
-## Required Environment Variables
-- `DATABASE_URL` = Neon/PostgreSQL connection string
-- `ADMIN_USER` = admin
-- `ADMIN_PASSWORD` = your strong password
-- `DEFAULT_SITE_ID` = arnehus
-- `OPENAI_API_KEY` = optional
+Environment variables:
+- `DATABASE_URL` Neon PostgreSQL connection string
+- `ADMIN_USER` admin username
+- `ADMIN_PASSWORD` admin password
+- `NODE_VERSION=20`
+- `OPENAI_API_KEY` optional, for smarter AI answers
+- `OPENAI_MODEL=gpt-4.1-mini`
 
-## After deploy
-1. Open `/health`
-2. Open `/admin/sites`
-3. Add site:
-   - site_id: `arnehus`
-   - URL: `https://www.arnehus.dk`
-4. Open `/admin/crawl?site=arnehus` and scan.
-5. Shopify theme snippet:
+## Admin URLs
+- `/health`
+- `/admin/sites`
+- `/admin/crawl?site=arnehus`
+- `/admin/pages?site=arnehus`
+- `/admin/leads?site=arnehus`
+
+## Shopify install
+Paste before `</body>` in theme.liquid:
 
 ```html
-<script>
-  window.KG_SITE_ID = "arnehus";
-</script>
-<script src="https://shoify-lead-chatbot-1.onrender.com/widget/chat-widget.js"></script>
+<script>window.KG_SITE_ID="arnehus";</script>
+<script src="https://YOUR-RENDER-URL.onrender.com/widget/chat-widget.js"></script>
 ```
+
+## First setup
+1. Create Neon database and add `DATABASE_URL` to Render.
+2. Deploy.
+3. Open `/admin/sites`, add site id `arnehus`, URL `https://www.arnehus.dk`, name `Arnehus`.
+4. Open `/admin/crawl?site=arnehus`, click Sync.
+5. Open website and test: `height adjustable desk 180x80 budget 1500`.
