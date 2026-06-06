@@ -169,9 +169,51 @@
       width:34px;height:34px;border-radius:12px;cursor:pointer;font-size:18px;line-height:1
     }
     @media (max-width: 520px){
-      .kg-chat-shell{right:16px;left:16px;bottom:78px;width:auto;max-width:none;height:min(78vh,700px)}
+      .kg-chat-launcher{
+        right:16px;bottom:16px;padding:13px 16px;font-size:13px
+      }
+      .kg-chat-shell{
+        right:10px;left:10px;top:10px;bottom:74px;
+        width:auto;max-width:none;height:auto;max-height:none;
+        border-radius:22px
+      }
+      .kg-chat-top{padding:16px 16px 14px}
+      .kg-chat-topbar{align-items:flex-start}
+      .kg-avatar{width:40px;height:40px;border-radius:14px}
+      .kg-title{font-size:17px}
+      .kg-subtitle{
+        max-width:none;font-size:12px;line-height:1.4
+      }
+      .kg-status{padding:7px 9px;font-size:11px}
+      .kg-quick-actions{
+        padding:12px 12px 0;gap:7px;grid-template-columns:repeat(2,minmax(0,1fr))
+      }
+      .kg-chip{
+        width:100%;padding:9px 10px;font-size:11px;min-height:38px;
+        white-space:normal;line-height:1.2
+      }
+      .kg-chat-body{
+        padding:14px
+      }
+      .kg-msg{
+        max-width:92%;font-size:13px;line-height:1.5;border-radius:14px
+      }
+      .kg-chat-footer{padding:12px}
+      .kg-compose{flex-direction:column;align-items:stretch;margin-bottom:8px}
+      .kg-input{
+        min-height:72px;padding:12px 12px;font-size:13px;border-radius:13px
+      }
+      .kg-send{
+        width:100%;padding:12px 14px;border-radius:13px;font-size:13px
+      }
+      .kg-support-note{flex-direction:column;align-items:flex-start;gap:6px;margin-top:6px}
+      .kg-escalate{margin-top:10px;padding-top:9px}
       .kg-form{grid-template-columns:1fr}
-      .kg-support-note{flex-direction:column;align-items:flex-start}
+      .kg-form input,.kg-form textarea{
+        padding:10px 11px;font-size:12px;border-radius:11px
+      }
+      .kg-form textarea{min-height:64px}
+      .kg-save{padding:11px 12px;font-size:13px;border-radius:11px}
     }
   `;
 
