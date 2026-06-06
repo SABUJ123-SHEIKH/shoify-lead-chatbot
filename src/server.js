@@ -57,8 +57,18 @@ function getOfferMeta(product){
 function enrichProduct(product){
   return { ...product, offer: getOfferMeta(product) };
 }
+function parseBudgetAmount(message){
+  const text = String(message || '').toLowerCase();
+  const match = text.match(/\b(?:budget|under|below|max(?:imum)?|up to|around|cheap|cheapest)\s*([$€£]?\s?\d[\d,]*(?:\.\d+)?)\b/)
+    || text.match(/\b([$€£]?\s?\d[\d,]*(?:\.\d+)?)\s*(?:budget|max|under|below)\b/)
+    || text.match(/\b([$€£]?\s?\d[\d,]*(?:\.\d+)?)\b/);
+  if (!match) return null;
+  return parseMoney(match[1]);
+}
 function detectIntent(message){
   const text = String(message || '').toLowerCase();
+  const hasBudget = parseBudgetAmount(text) !== null;
+  if (hasBudget && /\b(product|products|item|items|find|search|show|cheap|cheaply|price|cost|under|budget)\b/.test(text)) return { type:'budget', budget: parseBudgetAmount(text) };
   if (/\b(all\s+products?|show\s+all|catalog|browse\s+all)\b/.test(text)) return { type:'catalog' };
   if (/\b(offer|offers|sale|sales|discount|discounts|deal|deals|on\s+offer|on\s+sale)\b/.test(text)) return { type:'offer' };
   if (/\b(shipping|delivery|deliver|ship)\b/.test(text)) return { type:'faq', topic:'shipping' };
@@ -98,6 +108,13 @@ function buildCatalogProducts(catalog, category){
 }
 function buildOfferProducts(catalog){
   return catalog.filter(p => p.offer && p.offer.isOffer).slice(0, 8).map(enrichProduct);
+}
+function buildBudgetProducts(catalog, budget){
+  return catalog
+    .map(enrichProduct)
+    .filter(p => p.price !== null && p.price !== undefined && Number(p.price) <= budget)
+    .sort((a, b) => Number(a.price) - Number(b.price))
+    .slice(0, 8);
 }
 
 async function getSite(siteId){
@@ -309,6 +326,15 @@ function buildAgentPrompt(site, message, products, pages, catalog, faqs, history
 async function aiAnswer(site, products, pages, message, leadId){
   const intent = detectIntent(message);
   const catalog = dedupeByKey(await listCatalog(site.id, intent.type === 'catalog' ? 60 : 24), p => `${p.title}|${p.url}`);
+  if (intent.type === 'budget') {
+    const budgetProducts = buildBudgetProducts(catalog, intent.budget);
+    if (!budgetProducts.length) {
+      return `I checked ${site.name} and I could not find any products at or under ${intent.budget} DKK right now.\n\nIf you want, I can still show the cheapest products, current offers, or help you search by category.`;
+    }
+    const reply = formatProductList(budgetProducts, site.name, `Here are products on ${site.name} at or under ${intent.budget} DKK:`) || simpleAnswer(site, [], pages, message);
+    const offerCount = budgetProducts.filter(p => p.offer && p.offer.isOffer).length;
+    return `${reply}${offerCount ? `\n\n${offerCount} of these items are currently on offer.` : ''}\n\nIf you want, I can also sort by cheapest first or show only desks/chairs under your budget.`;
+  }
   if (intent.type === 'catalog') {
     const list = buildCatalogProducts(catalog);
     const reply = formatProductList(list, site.name, `Here are some products from ${site.name}:`) || simpleAnswer(site, [], pages, message);
