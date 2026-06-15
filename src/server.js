@@ -57,6 +57,16 @@ function getOfferMeta(product){
 function enrichProduct(product){
   return { ...product, offer: getOfferMeta(product) };
 }
+function detectCategoryHint(message){
+  const text = String(message || '').toLowerCase();
+  if (/\bdesk(s)?\b|\btable(s)?\b|\bworkstation\b|\bwork table\b/.test(text)) return 'desk';
+  if (/\bchair(s)?\b|\bstool(s)?\b|\bseat(s)?\b/.test(text)) return 'chair';
+  if (/\bsofa(s)?\b|\bcouch(?:es)?\b|\bsettee\b/.test(text)) return 'sofa';
+  if (/\bstorage\b|\bcabinet(s)?\b|\bshelf(?:es)?\b|\bdrawer(s)?\b/.test(text)) return 'storage';
+  if (/\blamp(s)?\b|\blight(?:ing)?\b|\blight fixture(s)?\b/.test(text)) return 'lighting';
+  if (/\baccessor(y|ies)\b|\baddon(s)?\b|\badd-on(s)?\b/.test(text)) return 'accessories';
+  return '';
+}
 function parseBudgetAmount(message){
   const text = String(message || '').toLowerCase();
   const match = text.match(/\b(?:budget|under|below|max(?:imum)?|up to|around|cheap|cheapest)\s*([$€£]?\s?\d[\d,]*(?:\.\d+)?)\b/)
@@ -68,7 +78,7 @@ function parseBudgetAmount(message){
 function detectIntent(message){
   const text = String(message || '').toLowerCase();
   const hasBudget = parseBudgetAmount(text) !== null;
-  if (hasBudget && /\b(product|products|item|items|find|search|show|cheap|cheaply|price|cost|under|budget)\b/.test(text)) return { type:'budget', budget: parseBudgetAmount(text) };
+  if (hasBudget && /\b(product|products|item|items|find|search|show|cheap|cheaply|price|cost|under|budget)\b/.test(text)) return { type:'budget', budget: parseBudgetAmount(text), category: detectCategoryHint(text) };
   if (/\b(all\s+products?|show\s+all|catalog|browse\s+all)\b/.test(text)) return { type:'catalog' };
   if (/\b(offer|offers|sale|sales|discount|discounts|deal|deals|on\s+offer|on\s+sale)\b/.test(text)) return { type:'offer' };
   if (/\b(shipping|delivery|deliver|ship)\b/.test(text)) return { type:'faq', topic:'shipping' };
@@ -112,6 +122,30 @@ function buildOfferProducts(catalog){
 function buildBudgetProducts(catalog, budget){
   return catalog
     .map(enrichProduct)
+    .filter(p => p.price !== null && p.price !== undefined && Number(p.price) <= budget)
+    .sort((a, b) => Number(a.price) - Number(b.price))
+    .slice(0, 8);
+}
+function buildBudgetCategoryProducts(catalog, budget, category){
+  const filtered = category
+    ? catalog
+        .map(enrichProduct)
+        .filter(p => {
+          const hay = `${p.title} ${p.product_type || ''} ${p.tags || ''}`.toLowerCase();
+          return category === 'desk'
+            ? /\bdesk|table|workstation|work table|table\b/.test(hay)
+            : category === 'chair'
+              ? /\bchair|seat|stool\b/.test(hay)
+              : category === 'sofa'
+                ? /\bsofa|couch|settee\b/.test(hay)
+                : category === 'storage'
+                  ? /\bstorage|cabinet|shelf|drawer\b/.test(hay)
+                  : category === 'lighting'
+                    ? /\blamp|lighting|light fixture\b/.test(hay)
+                    : /\baccessory|accessories|addon|add-on\b/.test(hay);
+        })
+    : catalog.map(enrichProduct);
+  return filtered
     .filter(p => p.price !== null && p.price !== undefined && Number(p.price) <= budget)
     .sort((a, b) => Number(a.price) - Number(b.price))
     .slice(0, 8);
@@ -327,11 +361,11 @@ async function aiAnswer(site, products, pages, message, leadId){
   const intent = detectIntent(message);
   const catalog = dedupeByKey(await listCatalog(site.id, intent.type === 'catalog' ? 60 : 24), p => `${p.title}|${p.url}`);
   if (intent.type === 'budget') {
-    const budgetProducts = buildBudgetProducts(catalog, intent.budget);
+    const budgetProducts = buildBudgetCategoryProducts(catalog, intent.budget, intent.category);
     if (!budgetProducts.length) {
-      return `I checked ${site.name} and I could not find any products at or under ${intent.budget} DKK right now.\n\nIf you want, I can still show the cheapest products, current offers, or help you search by category.`;
+      return `I checked ${site.name} and I could not find any products at or under ${intent.budget} DKK right now.${intent.category ? `\n\nI also checked ${intent.category} items specifically.` : ''}\n\nIf you want, I can still show the cheapest products, current offers, or help you search by category.`;
     }
-    const reply = formatProductList(budgetProducts, site.name, `Here are products on ${site.name} at or under ${intent.budget} DKK:`) || simpleAnswer(site, [], pages, message);
+    const reply = formatProductList(budgetProducts, site.name, `Here are products on ${site.name} at or under ${intent.budget} DKK${intent.category ? ` in ${intent.category}` : ''}:`) || simpleAnswer(site, [], pages, message);
     const offerCount = budgetProducts.filter(p => p.offer && p.offer.isOffer).length;
     return `${reply}${offerCount ? `\n\n${offerCount} of these items are currently on offer.` : ''}\n\nIf you want, I can also sort by cheapest first or show only desks/chairs under your budget.`;
   }
